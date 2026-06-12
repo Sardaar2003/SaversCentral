@@ -4,6 +4,9 @@ class SublyticsService {
   async submitOrder(payload) {
     const sublyticsUrl = process.env.SUBLYTICS_URL || 'https://redeo.sublytics.com/api/order/doAddProcess';
     
+    console.log(`[DEBUG][SUBLYTICS] ──── API CALL START ────`);
+    console.log(`[DEBUG][SUBLYTICS] Target URL: ${sublyticsUrl}`);
+
     // Build request payload matching Sublytics API requirements
     const requestData = {
       user_id: process.env.SUBLYTICS_USER_ID || '102',
@@ -49,9 +52,17 @@ class SublyticsService {
       user_agent: payload.user_agent || 'Mozilla/5.0'
     };
 
-    console.log('Sending payload to Sublytics:', JSON.stringify(requestData, null, 2));
+    // Log the payload with sensitive fields masked
+    const safeLog = { ...requestData };
+    safeLog.user_password = '****';
+    safeLog.card_number = `****${requestData.card_number.slice(-4)}`;
+    safeLog.card_cvv = '***';
+    console.log(`[DEBUG][SUBLYTICS] Request payload (masked):`, JSON.stringify(safeLog, null, 2));
 
     try {
+      console.log(`[DEBUG][SUBLYTICS] Sending POST request...`);
+      const startTime = Date.now();
+
       const response = await axios.post(sublyticsUrl, requestData, {
         headers: {
           'Content-Type': 'application/json',
@@ -60,14 +71,29 @@ class SublyticsService {
         timeout: 15000
       });
 
-      console.log('Sublytics API raw response:', JSON.stringify(response.data, null, 2));
+      const elapsed = Date.now() - startTime;
+      console.log(`[DEBUG][SUBLYTICS] Response received in ${elapsed}ms`);
+      console.log(`[DEBUG][SUBLYTICS] HTTP Status: ${response.status}`);
+      console.log(`[DEBUG][SUBLYTICS] Response body:`, JSON.stringify(response.data, null, 2));
+
+      const isSuccess = response.data.success !== undefined ? response.data.success : true;
+      console.log(`[DEBUG][SUBLYTICS] Interpreted success: ${isSuccess}`);
+      console.log(`[DEBUG][SUBLYTICS] ──── API CALL END ────`);
+
       return {
-        success: response.data.success !== undefined ? response.data.success : true,
+        success: isSuccess,
         data: response.data,
         payload: requestData
       };
     } catch (error) {
-      console.error('Sublytics API error:', error.response?.data || error.message);
+      const elapsed = Date.now() - (error.config?._startTime || Date.now());
+      console.error(`[DEBUG][SUBLYTICS] ──── API CALL ERROR ────`);
+      console.error(`[DEBUG][SUBLYTICS] Error type: ${error.code || 'UNKNOWN'}`);
+      console.error(`[DEBUG][SUBLYTICS] Message: ${error.message}`);
+      if (error.response) {
+        console.error(`[DEBUG][SUBLYTICS] HTTP Status: ${error.response.status}`);
+        console.error(`[DEBUG][SUBLYTICS] Error response:`, JSON.stringify(error.response.data, null, 2));
+      }
       return {
         success: false,
         message: error.response?.data?.message || error.message,

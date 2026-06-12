@@ -30,24 +30,75 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ============================================================
+// [DEBUG] Global Request Logger Middleware
+// Logs every incoming request with method, URL, body, and query
+// ============================================================
+app.use((req, res, next) => {
+  const timestamp = new Date().toISOString();
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`[DEBUG][REQUEST] ${req.method} ${req.originalUrl}`);
+  console.log(`[DEBUG][REQUEST] Timestamp: ${timestamp}`);
+  console.log(`[DEBUG][REQUEST] IP: ${req.ip}`);
+  console.log(`[DEBUG][REQUEST] User-Agent: ${req.headers['user-agent']}`);
+  if (req.headers.authorization) {
+    console.log(`[DEBUG][REQUEST] Auth Header: Bearer ${req.headers.authorization.split(' ')[1]?.substring(0, 20)}...`);
+  }
+  if (Object.keys(req.query).length > 0) {
+    console.log(`[DEBUG][REQUEST] Query Params:`, JSON.stringify(req.query, null, 2));
+  }
+  if (req.body && Object.keys(req.body).length > 0) {
+    // Mask sensitive fields in the log
+    const safeCopy = { ...req.body };
+    if (safeCopy.password) safeCopy.password = '****';
+    if (safeCopy.newPassword) safeCopy.newPassword = '****';
+    if (safeCopy.card_number) safeCopy.card_number = `****${safeCopy.card_number.slice(-4)}`;
+    if (safeCopy.card_cvv) safeCopy.card_cvv = '***';
+    console.log(`[DEBUG][REQUEST] Body:`, JSON.stringify(safeCopy, null, 2));
+  }
+  console.log(`${'='.repeat(70)}`);
+
+  // Capture response details
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    console.log(`[DEBUG][RESPONSE] ${req.method} ${req.originalUrl} → Status: ${res.statusCode}`);
+    if (body && typeof body === 'object') {
+      const safeBody = { ...body };
+      // Don't log full token or apiResponse in response logs
+      if (safeBody.data?.token) safeBody.data = { ...safeBody.data, token: safeBody.data.token.substring(0, 20) + '...' };
+      if (safeBody.data?.apiResponse) safeBody.data = { ...safeBody.data, apiResponse: '[TRUNCATED]' };
+      if (safeBody.data?.apiPayload) safeBody.data = { ...safeBody.data, apiPayload: '[TRUNCATED]' };
+      console.log(`[DEBUG][RESPONSE] Body:`, JSON.stringify(safeBody, null, 2));
+    }
+    console.log(`${'─'.repeat(70)}\n`);
+    return originalJson(body);
+  };
+
+  next();
+});
+
 // Database Seeder for Projects and Products
 const seedProjectsAndProducts = async () => {
   try {
+    console.log('[DEBUG][SEEDER] Starting project and product seed validation...');
     // 1. Seed or find the parent Project: "SC Project"
     let scProject = await Project.findOne({ name: 'SC Project' });
     if (!scProject) {
-      console.log('SC Project container not found. Seeding SC Project...');
+      console.log('[DEBUG][SEEDER] SC Project container not found. Seeding SC Project...');
       scProject = await Project.create({
         name: 'SC Project',
         key: 'scproject',
         enabled: true
       });
+      console.log(`[DEBUG][SEEDER] SC Project created with ID: ${scProject._id}`);
+    } else {
+      console.log(`[DEBUG][SEEDER] SC Project already exists. ID: ${scProject._id}`);
     }
 
     // Clean up old project documents (that are not SC Project) to ensure only SC Project is in the collection
     const deleteProjResult = await Project.deleteMany({ name: { $ne: 'SC Project' } });
     if (deleteProjResult.deletedCount > 0) {
-      console.log(`Cleaned up ${deleteProjResult.deletedCount} legacy project documents from projects collection.`);
+      console.log(`[DEBUG][SEEDER] Cleaned up ${deleteProjResult.deletedCount} legacy project documents from projects collection.`);
     }
 
     // Clean up old products that are not linked to SC Project (i.e. project: null or undefined)
@@ -58,7 +109,7 @@ const seedProjectsAndProducts = async () => {
       ]
     });
     if (deleteProdResult.deletedCount > 0) {
-      console.log(`Cleaned up ${deleteProdResult.deletedCount} legacy product campaigns.`);
+      console.log(`[DEBUG][SEEDER] Cleaned up ${deleteProdResult.deletedCount} legacy product campaigns.`);
     }
 
     // 2. Seed default Products under SC Project
@@ -104,13 +155,15 @@ const seedProjectsAndProducts = async () => {
     for (const prod of defaultProducts) {
       const exists = await Product.findOne({ key: prod.key });
       if (!exists) {
-        console.log(`Seeding missing product campaign: ${prod.name}`);
+        console.log(`[DEBUG][SEEDER] Seeding missing product campaign: ${prod.name}`);
         await Product.create(prod);
+      } else {
+        console.log(`[DEBUG][SEEDER] Product "${prod.name}" already exists. ID: ${exists._id}`);
       }
     }
-    console.log('Projects and Products database validation complete.');
+    console.log('[DEBUG][SEEDER] Projects and Products database validation complete.');
   } catch (error) {
-    console.error('Error seeding projects and products:', error);
+    console.error('[DEBUG][SEEDER] Error seeding projects and products:', error);
   }
 };
 
@@ -128,6 +181,7 @@ app.use('/api/orders', orderRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
+  console.log('[DEBUG][HEALTH] Health check endpoint hit');
   res.json({ success: true, message: 'Server is running', time: new Date() });
 });
 
@@ -149,7 +203,7 @@ app.get('*', (req, res, next) => {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled server error:', err.stack);
+  console.error(`[DEBUG][ERROR] Unhandled server error on ${req.method} ${req.originalUrl}:`, err.stack);
   res.status(500).json({
     success: false,
     message: err.message || 'An unexpected error occurred on the server'
@@ -158,5 +212,18 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running in development mode on port ${PORT}`);
+  console.log(`\n[DEBUG][SERVER] ===== Server running in development mode on port ${PORT} =====`);
+  console.log(`[DEBUG][SERVER] Endpoints registered:`);
+  console.log(`[DEBUG][SERVER]   POST /api/auth/register`);
+  console.log(`[DEBUG][SERVER]   POST /api/auth/login`);
+  console.log(`[DEBUG][SERVER]   POST /api/auth/forgot-password`);
+  console.log(`[DEBUG][SERVER]   GET  /api/projects`);
+  console.log(`[DEBUG][SERVER]   GET  /api/products`);
+  console.log(`[DEBUG][SERVER]   GET  /api/orders`);
+  console.log(`[DEBUG][SERVER]   POST /api/orders`);
+  console.log(`[DEBUG][SERVER]   GET  /api/orders/stats`);
+  console.log(`[DEBUG][SERVER]   GET  /api/orders/export`);
+  console.log(`[DEBUG][SERVER]   GET  /api/users`);
+  console.log(`[DEBUG][SERVER]   GET  /api/health`);
+  console.log(`[DEBUG][SERVER] ========================================\n`);
 });
