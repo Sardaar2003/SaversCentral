@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../config/axios.js';
 import { useToast } from '../context/ToastContext.jsx';
-import { FiPlus, FiToggleLeft, FiToggleRight, FiUsers, FiLayers, FiShoppingCart, FiTrash2, FiEdit2, FiX, FiInfo } from 'react-icons/fi';
+import { FiPlus, FiToggleLeft, FiToggleRight, FiUsers, FiLayers, FiShoppingCart, FiTrash2, FiEdit2, FiX, FiInfo, FiActivity, FiTrendingUp, FiCheckCircle, FiXCircle, FiAlertTriangle, FiSearch, FiRefreshCw } from 'react-icons/fi';
 
 const AdminDashboard = () => {
   const { addToast } = useToast();
@@ -13,6 +13,12 @@ const AdminDashboard = () => {
   const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Tracking stats state
+  const [trackingStats, setTrackingStats] = useState({ agentStats: [], groupStats: [] });
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [loadingTracking, setLoadingTracking] = useState(false);
 
   // New Project Form
   const [projectName, setProjectName] = useState('');
@@ -67,6 +73,31 @@ const AdminDashboard = () => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const fetchTrackingStats = async () => {
+    setLoadingTracking(true);
+    try {
+      let query = '';
+      if (startDate) query += `&startDate=${startDate}`;
+      if (endDate) query += `&endDate=${endDate}`;
+      
+      const response = await API.get(`/orders/tracking-stats?${query.slice(1)}`);
+      if (response.data.success) {
+        setTrackingStats(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching tracking stats:', err);
+      addToast('error', 'Error', 'Failed to retrieve tracking metrics.');
+    } finally {
+      setLoadingTracking(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'tracking') {
+      fetchTrackingStats();
+    }
+  }, [activeTab]);
 
   const managers = users.filter((u) => u.role === 'manager' && u.status === 'active');
   const availableMembers = users.filter((u) => u.role === 'user' && u.status === 'active');
@@ -299,6 +330,12 @@ const AdminDashboard = () => {
           style={{ ...tabButtonStyle, ...(activeTab === 'teams' ? activeTabStyle : {}) }}
         >
           <FiUsers /> Squad Teams
+        </button>
+        <button
+          onClick={() => setActiveTab('tracking')}
+          style={{ ...tabButtonStyle, ...(activeTab === 'tracking' ? activeTabStyle : {}) }}
+        >
+          <FiActivity /> Tracking & Performance
         </button>
       </div>
 
@@ -688,6 +725,216 @@ const AdminDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Tab Contents: Tracking & Performance */}
+      {activeTab === 'tracking' && (
+        <div className="glass-panel" style={tabPanelStyle}>
+          <div style={panelHeaderStyle}>
+            <h3>SRE Compliance & Performance Tracking</h3>
+            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Real-time audit logs of squad activities and violations</span>
+          </div>
+
+          {/* Date Filter Bar */}
+          <div className="glass-panel" style={filterBarContainerStyle}>
+            <div style={filterFormStyle}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Start Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  style={filterInputStyle}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>End Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  style={filterInputStyle}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', alignSelf: 'flex-end' }}>
+                <button type="button" className="btn btn-primary" onClick={fetchTrackingStats} style={filterBtnStyle}>
+                  <FiSearch /> Filter
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setStartDate('');
+                    setEndDate('');
+                    // Trigger refetch with empty dates:
+                    setTimeout(() => {
+                      API.get('/orders/tracking-stats').then(res => {
+                        if (res.data.success) setTrackingStats(res.data.data);
+                      });
+                    }, 0);
+                  }}
+                  style={filterBtnStyle}
+                >
+                  <FiRefreshCw /> Reset
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Summary Metric Cards */}
+          {loadingTracking ? (
+            <div style={{ padding: '3rem 0', display: 'flex', justifyContent: 'center' }}>
+              <div className="spinner" style={{ width: '32px', height: '32px' }}></div>
+            </div>
+          ) : (
+            <>
+              {/* Calculating totals for metrics */}
+              {(() => {
+                const totalReq = trackingStats.agentStats.reduce((acc, a) => acc + a.totalRequests, 0);
+                const totalSucc = trackingStats.agentStats.reduce((acc, a) => acc + a.successful, 0);
+                const totalFail = trackingStats.agentStats.reduce((acc, a) => acc + a.failed, 0);
+                const totalViol = trackingStats.agentStats.reduce((acc, a) => acc + a.violations, 0);
+
+                return (
+                  <div style={statsGridStyle}>
+                    <div className="glass-panel" style={statsCardStyle('var(--color-primary)')}>
+                      <div style={cardHeaderStyle}>
+                        <span style={cardTitleStyle}>Total Requests</span>
+                        <div style={iconContainerStyle}><FiActivity style={{ color: 'var(--color-primary)' }} /></div>
+                      </div>
+                      <h2 style={cardValueStyle}>{totalReq}</h2>
+                      <p style={cardDescStyle}>Submitted transaction attempts</p>
+                    </div>
+                    <div className="glass-panel" style={statsCardStyle('var(--color-success)')}>
+                      <div style={cardHeaderStyle}>
+                        <span style={cardTitleStyle}>Successful Sales</span>
+                        <div style={iconContainerStyle}><FiCheckCircle style={{ color: 'var(--color-success)' }} /></div>
+                      </div>
+                      <h2 style={cardValueStyle}>{totalSucc}</h2>
+                      <p style={cardDescStyle}>Approved card transactions</p>
+                    </div>
+                    <div className="glass-panel" style={statsCardStyle('var(--color-error)')}>
+                      <div style={cardHeaderStyle}>
+                        <span style={cardTitleStyle}>Declined / Failed</span>
+                        <div style={iconContainerStyle}><FiXCircle style={{ color: 'var(--color-error)' }} /></div>
+                      </div>
+                      <h2 style={cardValueStyle}>{totalFail}</h2>
+                      <p style={cardDescStyle}>Gateway errors & declines</p>
+                    </div>
+                    <div className="glass-panel" style={statsCardStyle('var(--color-accent)')}>
+                      <div style={cardHeaderStyle}>
+                        <span style={cardTitleStyle}>Policy Violations</span>
+                        <div style={iconContainerStyle}><FiAlertTriangle style={{ color: 'var(--color-accent)' }} /></div>
+                      </div>
+                      <h2 style={cardValueStyle}>{totalViol}</h2>
+                      <p style={cardDescStyle}>Blocked rule violations</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Squad Performance Grid */}
+              <div style={{ marginTop: '2.5rem' }}>
+                <h4 style={subSectionHeaderStyle}><FiUsers /> Squad (Group) Performance</h4>
+                <div className="table-container">
+                  <table className="custom-table">
+                    <thead>
+                      <tr>
+                        <th>Squad Name</th>
+                        <th>Lead Manager</th>
+                        <th style={{ textAlign: 'center' }}>Requests Sent</th>
+                        <th style={{ textAlign: 'center' }}>Approved</th>
+                        <th style={{ textAlign: 'center' }}>Failed</th>
+                        <th style={{ textAlign: 'center' }}>Violations</th>
+                        <th style={{ textAlign: 'center' }}>Success Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trackingStats.groupStats.length === 0 ? (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No squad data recorded.</td>
+                        </tr>
+                      ) : (
+                        trackingStats.groupStats.map(group => {
+                          const rate = group.totalRequests > 0 ? ((group.successful / group.totalRequests) * 100).toFixed(1) : '0.0';
+                          return (
+                            <tr key={group._id}>
+                              <td style={{ fontWeight: 600 }}>{group.name}</td>
+                              <td style={{ color: 'var(--color-info)', fontWeight: 500 }}>{group.managerName}</td>
+                              <td style={{ textAlign: 'center', fontWeight: 600 }}>{group.totalRequests}</td>
+                              <td style={{ textAlign: 'center', color: 'var(--color-success)' }}>{group.successful}</td>
+                              <td style={{ textAlign: 'center', color: 'var(--color-error)' }}>{group.failed}</td>
+                              <td style={{ textAlign: 'center', color: 'var(--color-accent)' }}>
+                                {group.violations > 0 ? (
+                                  <span className="badge badge-error" style={{ backgroundColor: 'rgba(244, 63, 94, 0.1)', color: 'var(--color-error)' }}>
+                                    {group.violations}
+                                  </span>
+                                ) : '0'}
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 700 }}>{rate}%</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Agent Performance Grid */}
+              <div style={{ marginTop: '2.5rem' }}>
+                <h4 style={subSectionHeaderStyle}><FiActivity /> Agent (User) Performance</h4>
+                <div className="table-container">
+                  <table className="custom-table">
+                    <thead>
+                      <tr>
+                        <th>Agent Name</th>
+                        <th>Username</th>
+                        <th>Assigned Squad</th>
+                        <th style={{ textAlign: 'center' }}>Requests Sent</th>
+                        <th style={{ textAlign: 'center' }}>Approved</th>
+                        <th style={{ textAlign: 'center' }}>Failed</th>
+                        <th style={{ textAlign: 'center' }}>Violations</th>
+                        <th style={{ textAlign: 'center' }}>Success Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trackingStats.agentStats.length === 0 ? (
+                        <tr>
+                          <td colSpan="8" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No agent data recorded.</td>
+                        </tr>
+                      ) : (
+                        trackingStats.agentStats.map(agent => {
+                          const rate = agent.totalRequests > 0 ? ((agent.successful / agent.totalRequests) * 100).toFixed(1) : '0.0';
+                          return (
+                            <tr key={agent._id}>
+                              <td style={{ fontWeight: 600 }}>{agent.name}</td>
+                              <td><code style={codeStyle}>{agent.username}</code></td>
+                              <td><span className="badge badge-info">{agent.teamName}</span></td>
+                              <td style={{ textAlign: 'center', fontWeight: 600 }}>{agent.totalRequests}</td>
+                              <td style={{ textAlign: 'center', color: 'var(--color-success)' }}>{agent.successful}</td>
+                              <td style={{ textAlign: 'center', color: 'var(--color-error)' }}>{agent.failed}</td>
+                              <td style={{ textAlign: 'center', color: 'var(--color-accent)' }}>
+                                {agent.violations > 0 ? (
+                                  <span className="badge badge-error" style={{ backgroundColor: 'rgba(244, 63, 94, 0.1)', color: 'var(--color-error)' }}>
+                                    {agent.violations}
+                                  </span>
+                                ) : '0'}
+                              </td>
+                              <td style={{ textAlign: 'center', fontWeight: 700 }}>{rate}%</td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -902,6 +1149,102 @@ const spinnerContainerStyle = {
   display: 'flex',
   justifyContent: 'center',
   padding: '5rem 0',
+};
+
+// Tracking and Performance custom styles
+const filterBarContainerStyle = {
+  padding: '1.25rem',
+  backgroundColor: 'rgba(15, 23, 42, 0.25)',
+  borderRadius: '10px',
+  border: '1px solid rgba(255,255,255,0.04)',
+  marginBottom: '2rem',
+};
+
+const filterFormStyle = {
+  display: 'flex',
+  gap: '1rem',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+};
+
+const filterInputStyle = {
+  width: '180px',
+  height: '38px',
+  padding: '0 0.75rem',
+  fontSize: '0.88rem',
+};
+
+const filterBtnStyle = {
+  height: '38px',
+  padding: '0 1.25rem',
+  fontSize: '0.88rem',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.35rem',
+};
+
+const subSectionHeaderStyle = {
+  fontSize: '1.1rem',
+  fontWeight: 700,
+  color: 'var(--text-primary)',
+  marginBottom: '1rem',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '0.5rem',
+};
+
+const statsGridStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+  gap: '1.25rem',
+  marginBottom: '2rem',
+};
+
+const statsCardStyle = (color) => ({
+  padding: '1.5rem',
+  backgroundColor: 'rgba(15, 23, 42, 0.25)',
+  borderLeft: `4px solid ${color}`,
+  borderRadius: '8px',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'space-between',
+  minHeight: '130px',
+});
+
+const cardHeaderStyle = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'flex-start',
+};
+
+const cardTitleStyle = {
+  fontSize: '0.8rem',
+  fontWeight: 700,
+  textTransform: 'uppercase',
+  color: 'var(--text-secondary)',
+  letterSpacing: '0.05em',
+};
+
+const iconContainerStyle = {
+  padding: '0.4rem',
+  borderRadius: '6px',
+  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontSize: '1.1rem',
+};
+
+const cardValueStyle = {
+  fontSize: '1.75rem',
+  fontWeight: 800,
+  margin: '0.5rem 0',
+  color: 'var(--text-primary)',
+};
+
+const cardDescStyle = {
+  fontSize: '0.75rem',
+  color: 'var(--text-muted)',
 };
 
 export default AdminDashboard;

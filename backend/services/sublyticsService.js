@@ -58,7 +58,6 @@ class SublyticsService {
     safeLog.card_number = `****${requestData.card_number.slice(-4)}`;
     safeLog.card_cvv = '***';
     console.log(`[DEBUG][SUBLYTICS] Request payload (masked):`, JSON.stringify(safeLog, null, 2));
-
     try {
       console.log(`[DEBUG][SUBLYTICS] Sending POST request...`);
       const startTime = Date.now();
